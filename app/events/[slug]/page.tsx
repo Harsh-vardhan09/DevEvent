@@ -2,6 +2,7 @@ import BookEvent from "@/components/BookEvent";
 import EventCard from "@/components/EventCard";
 import { IEvent } from "@/database";
 import { getSimilarEventsBySlug } from "@/lib/actions/event.actions";
+import { cacheLife } from "next/cache";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import React from "react";
@@ -46,9 +47,36 @@ const EventTags = ({ tags }: { tags: string[] }) => (
 );
 
 const page = async ({ params }: { params: Promise<{ slug: string }> }) => {
+    'use cache'
+    cacheLife('hours')
+  
   const { slug } = await params;
 
-  const request = await fetch(`${BASE_URL}/api/events/${slug}`);
+  let event;
+
+  try {
+    const request = await fetch(`${BASE_URL}/api/events/${slug}`, {
+      next: { revalidate: 60 },
+    });
+
+    if (!request.ok) {
+      if (request.status === 404) {
+        return notFound();
+      }
+      throw new Error(`Failed to fetch event: ${request.statusText}`);
+    }
+
+    const response = await request.json();
+    event = response.event;
+
+    if (!event) {
+      return notFound();
+    }
+  } catch (error) {
+      console.error('Error fetching event:', error);
+        return notFound();
+  }
+
   const {
     event: {
       description,
@@ -63,7 +91,7 @@ const page = async ({ params }: { params: Promise<{ slug: string }> }) => {
       organizer,
       tags,
     },
-  } = await request.json();
+  } = await event;
 
   if (!description) return notFound();
 
@@ -137,7 +165,7 @@ const page = async ({ params }: { params: Promise<{ slug: string }> }) => {
               <p className="text-sm"> Be the first to book your spot</p>
             )}
 
-            <BookEvent />
+            <BookEvent eventId={event.id} slug={event.slug} />
           </div>
         </aside>
       </div>
@@ -145,9 +173,10 @@ const page = async ({ params }: { params: Promise<{ slug: string }> }) => {
       <div className="flex w-full flex-col gap-4 pt-4">
         <h2>Similar Events</h2>
         <div className="events">
-          {similarEvents.length>0 && similarEvents.map((similarEvent:IEvent)=>(
-            <EventCard key={similarEvent.title} {...similarEvent}/>
-          ))}
+          {similarEvents.length > 0 &&
+            similarEvents.map((similarEvent: IEvent) => (
+              <EventCard key={similarEvent.title} {...similarEvent} />
+            ))}
         </div>
       </div>
     </section>
